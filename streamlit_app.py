@@ -137,7 +137,7 @@ def parse_pasted_data(pasted_data, delimiter):
     # Split the data into lines
     lines = pasted_data.strip().split("\n")
     # Split each line into columns
-    data = [line.split("/t") for line in lines]
+    data = [line.split("\t") for line in lines]
     # Find the maximum number of columns
     max_cols = max(len(row) for row in data)
     # Pad the rows to have the same number of columns
