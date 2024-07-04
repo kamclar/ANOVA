@@ -133,6 +133,19 @@ def display_table(anova_table, tukey):
     tukey_summary_html = tukey.summary().as_html()
     return anova_table_html, tukey_summary_html
 
+def parse_pasted_data(pasted_data, delimiter):
+    # Split the data into lines
+    lines = pasted_data.strip().split("\n")
+    # Split each line into columns
+    data = [line.split(delimiter) for line in lines]
+    # Find the maximum number of columns
+    max_cols = max(len(row) for row in data)
+    # Pad the rows to have the same number of columns
+    padded_data = [row + [''] * (max_cols - len(row)) for row in data]
+    # Convert to DataFrame
+    df = pd.DataFrame(padded_data).replace('', np.nan)
+    return df
+
 st.title('ANOVA Analysis')
 
 delimiter = st.selectbox('Select delimiter', (';', '\t', ','))
@@ -149,7 +162,7 @@ if (input_method == 'File Upload' and uploaded_file is not None) or (input_metho
         if input_method == 'File Upload':
             data = pd.read_csv(uploaded_file, delimiter=delimiter, header=None)
         else:
-            data = pd.read_csv(StringIO(pasted_data), delimiter=delimiter, header=None)
+            data = parse_pasted_data(pasted_data, delimiter)
 
         st.write("Data Preview:", data.head())
 
