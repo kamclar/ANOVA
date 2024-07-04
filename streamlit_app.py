@@ -144,6 +144,7 @@ def parse_pasted_data(pasted_data, delimiter):
     padded_data = [row + [''] * (max_cols - len(row)) for row in data]
     # Convert to DataFrame
     df = pd.DataFrame(padded_data).replace('', np.nan)
+    df = df.apply(pd.to_numeric, errors='coerce')
     return df
 
 st.title('ANOVA Analysis')
