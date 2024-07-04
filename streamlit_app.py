@@ -4,7 +4,6 @@ import statsmodels.api as sm
 import matplotlib.pyplot as plt
 from statsmodels.formula.api import mixedlm
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
-from statsmodels.stats.multitest import multipletests
 import streamlit as st
 from tabulate import tabulate
 import io
@@ -40,12 +39,12 @@ def analyze_mixed_effects(data, groups):
     model = mixedlm("value ~ group", data=anova_df, groups=anova_df["biorep"])
     result = model.fit()
 
-    # Extract pairwise comparisons using Tukey HSD
     tukey = pairwise_tukeyhsd(endog=anova_df['value'], groups=anova_df['group'], alpha=0.05)
+    significant_pairs = tukey.reject
 
-    return anova_df, result.summary(), tukey
+    return anova_df, result.summary(), tukey, significant_pairs
 
-def plot_results(groups, anova_df, tukey):
+def plot_results(groups, anova_df, tukey, significant_pairs):
     means = anova_df.groupby('group')['value'].mean()
     std_devs = anova_df.groupby('group')['value'].std()
 
@@ -60,19 +59,20 @@ def plot_results(groups, anova_df, tukey):
     ax.set_title('Comparison of Group Means (Mixed Effects)', fontsize=15)
     ax.set_ylabel('Mean Values', fontsize=12)
 
-    if np.any(tukey.reject):
+    if np.any(significant_pairs):
         max_val = max(means) + max(std_devs)
         h = max_val * 0.05
         gap = max_val * 0.02
         whisker_gap = max_val * 0.02
 
-        for i, reject in enumerate(tukey.reject):
-            if reject:
-                group1, group2 = tukey.groupsunique[tukey._pairs[i]]
-                group1_idx = groups.index(group1)
-                group2_idx = groups.index(group2)
-                add_significance(ax, group1_idx, group2_idx, max_val + whisker_gap, h, '*')
-                whisker_gap += h + gap
+        comparisons = np.array(tukey.summary().data[1:])
+        significant_comparisons = comparisons[significant_pairs]
+
+        for comp in significant_comparisons:
+            group1 = groups.index(comp[0])
+            group2 = groups.index(comp[1])
+            add_significance(ax, group1, group2, max_val + whisker_gap, h, '*')
+            whisker_gap += h + gap
 
     ax.set_facecolor('white')
     fig.patch.set_facecolor('white')
@@ -129,11 +129,11 @@ if (input_method == 'File Upload' and uploaded_file is not None) or (input_metho
 
         if st.button('Run Analysis and Plot'):
             groups = eval(groups_input)
-            anova_df, summary, tukey = analyze_mixed_effects(data_values, groups)
+            anova_df, summary, tukey, significant_pairs = analyze_mixed_effects(data_values, groups)
 
             st.write("Analysis Type: Mixed Effects Model")
             summary_html, tukey_summary_html = display_table(summary, tukey)
-            plot_url = plot_results(groups, anova_df, tukey)
+            plot_url = plot_results(groups, anova_df, tukey, significant_pairs)
 
             st.markdown(summary_html, unsafe_allow_html=True)
             st.markdown(tukey_summary_html, unsafe_allow_html=True)
