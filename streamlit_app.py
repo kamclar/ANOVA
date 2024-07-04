@@ -6,6 +6,8 @@ from statsmodels.formula.api import ols
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 import streamlit as st
 from tabulate import tabulate
+import io
+import base64
 
 def analyze_data(data, groups):
     df = pd.DataFrame(data.T, columns=groups * 3)
@@ -104,6 +106,3 @@ if st.button('Run Analysis and Plot'):
     st.markdown(anova_table_html, unsafe_allow_html=True)
     st.markdown(tukey_summary_html, unsafe_allow_html=True)
     st.image(f"data:image/png;base64,{plot_url}")
-
-if __name__ == '__main__':
-    st.run()
