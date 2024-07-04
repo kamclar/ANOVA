@@ -149,7 +149,7 @@ def parse_pasted_data(pasted_data, delimiter):
 
 st.title('ANOVA Analysis')
 
-delimiter = st.selectbox('Select delimiter', (';', '\t', ','))
+#delimiter = st.selectbox('Select delimiter', (';', '\t', ','))
 
 input_method = st.radio("Select input method", ('File Upload', 'Copy-Paste'))
 
