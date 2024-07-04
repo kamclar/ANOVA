@@ -72,7 +72,8 @@ def plot_results(groups, anova_df, means, std_devs, analysis_type):
     return plot_url
 
 def display_table(mixed_model_result):
-    summary_html = mixed_model_result.summary().tables[1].as_html()
+    summary = mixed_model_result.summary()
+    summary_html = summary.tables[1].as_html()
     return summary_html
 
 def parse_pasted_data(pasted_data, delimiter):
