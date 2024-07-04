@@ -3,7 +3,7 @@ import pandas as pd
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
 from statsmodels.formula.api import ols, wls
-import scikit_posthocs as sp
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
 import streamlit as st
 from tabulate import tabulate
 import io
@@ -32,8 +32,8 @@ def analyze_standard_anova(data, groups):
     model = ols('value ~ C(group)', data=anova_df).fit()
     anova_table = sm.stats.anova_lm(model, typ=2)
 
-    dunn = sp.posthoc_dunn(anova_df, val_col='value', group_col='group', p_adjust='bonferroni')
-    significant_pairs = dunn < 0.05
+    tukey = pairwise_tukeyhsd(endog=anova_df['value'], groups=anova_df['group'], alpha=0.05)
+    significant_pairs = tukey.reject
 
     means = []
     std_devs = []
@@ -43,7 +43,7 @@ def analyze_standard_anova(data, groups):
         means.append(np.mean(group_values))
         std_devs.append(np.std(group_values))
 
-    return anova_df, anova_table, dunn, significant_pairs, means, std_devs, "Standard ANOVA"
+    return anova_df, anova_table, tukey, significant_pairs, means, std_devs, "Standard ANOVA"
 
 def analyze_weighted_anova(data, groups):
     df = pd.DataFrame(data.T, columns=groups * 3)
@@ -74,8 +74,8 @@ def analyze_weighted_anova(data, groups):
     model = wls('value ~ C(group)', data=anova_df, weights=anova_df['weights']).fit()
     anova_table = sm.stats.anova_lm(model, typ=2)
 
-    dunn = sp.posthoc_dunn(anova_df, val_col='value', group_col='group', p_adjust='bonferroni')
-    significant_pairs = dunn < 0.05
+    tukey = pairwise_tukeyhsd(endog=anova_df['value'], groups=anova_df['group'], alpha=0.05)
+    significant_pairs = tukey.reject
 
     means = []
     std_devs = []
@@ -85,9 +85,9 @@ def analyze_weighted_anova(data, groups):
         means.append(np.mean(group_values))
         std_devs.append(np.std(group_values))
 
-    return anova_df, anova_table, dunn, significant_pairs, means, std_devs, "Weighted ANOVA"
+    return anova_df, anova_table, tukey, significant_pairs, means, std_devs, "Weighted ANOVA"
 
-def plot_results(groups, anova_df, dunn, significant_pairs, means, std_devs, analysis_type):
+def plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs, analysis_type):
     def add_significance(ax, x1, x2, y, h, text):
         ax.plot([x1, x1, x2, x2], [y, y + h, y + h, y], lw=1.5, color='black')
         ax.text((x1 + x2) * .5, y + h, text, ha='center', va='bottom', color='black', fontsize=12)
@@ -99,16 +99,19 @@ def plot_results(groups, anova_df, dunn, significant_pairs, means, std_devs, ana
     ax.set_title(f'Comparison of Group Means ({analysis_type})', fontsize=15)
     ax.set_ylabel('Mean Values', fontsize=12)
 
-    if significant_pairs.values.any():
+    if np.any(significant_pairs):
         max_val = max(means) + max(std_devs)
         h = max_val * 0.05
         gap = max_val * 0.02
         whisker_gap = max_val * 0.02
 
-        comparisons = np.array(dunn.index)
-        for i, comp in enumerate(comparisons):
-            if significant_pairs.iloc[i, :].values.any():
-                group1, group2 = map(lambda x: groups.index(x), comp.split('-'))
+        comparisons = np.array(tukey.summary().data[1:])
+        significant_comparisons = comparisons[significant_pairs]
+
+        for comp in significant_comparisons:
+            if 'siRNA_ctrl' in comp[:2]:
+                group1 = groups.index(comp[0])
+                group2 = groups.index(comp[1])
                 add_significance(ax, group1, group2, max_val + whisker_gap, h, '*')
                 whisker_gap += h + gap
 
@@ -125,10 +128,10 @@ def plot_results(groups, anova_df, dunn, significant_pairs, means, std_devs, ana
 
     return plot_url
 
-def display_table(anova_table, dunn):
+def display_table(anova_table, tukey):
     anova_table_html = anova_table.to_html(classes='table table-striped')
-    dunn_summary_html = dunn.to_html(classes='table table-striped')
-    return anova_table_html, dunn_summary_html
+    tukey_summary_html = tukey.summary().as_html()
+    return anova_table_html, tukey_summary_html
 
 def parse_pasted_data(pasted_data, delimiter):
     # Split the data into lines
@@ -176,17 +179,17 @@ if (input_method == 'File Upload' and uploaded_file is not None) or (input_metho
             contains_nan = data.isna().any(axis=1).any()
 
             if contains_nan:
-                anova_df, anova_table, dunn, significant_pairs, means, std_devs, analysis_type = analyze_weighted_anova(data_values, groups)
+                anova_df, anova_table, tukey, significant_pairs, means, std_devs, analysis_type = analyze_weighted_anova(data_values, groups)
             else:
-                anova_df, anova_table, dunn, significant_pairs, means, std_devs, analysis_type = analyze_standard_anova(data_values, groups)
+                anova_df, anova_table, tukey, significant_pairs, means, std_devs, analysis_type = analyze_standard_anova(data_values, groups)
 
             st.write(f"Analysis Type: {analysis_type}")
 
-            anova_table_html, dunn_summary_html = display_table(anova_table, dunn)
-            plot_url = plot_results(groups, anova_df, dunn, significant_pairs, means, std_devs, analysis_type)
+            anova_table_html, tukey_summary_html = display_table(anova_table, tukey)
+            plot_url = plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs, analysis_type)
 
             st.markdown(anova_table_html, unsafe_allow_html=True)
-            st.markdown(dunn_summary_html, unsafe_allow_html=True)
+            st.markdown(tukey_summary_html, unsafe_allow_html=True)
             st.image(f"data:image/png;base64,{plot_url}")
     except Exception as e:
         st.error(f"Error processing the file: {e}")
