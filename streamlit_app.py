@@ -158,7 +158,7 @@ if uploaded_file is not None:
             else:
                 anova_df, anova_table, tukey, significant_pairs, means, std_devs, analysis_type = analyze_standard_anova(data_values, groups)
 
-            st.write(f"Analysis Type: {analysis_type}")
+            st.markdown(f"Analysis Type: {analysis_type}")
 
             anova_table_html, tukey_summary_html = display_table(anova_table, tukey)
             plot_url = plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs, analysis_type)
