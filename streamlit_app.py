@@ -3,6 +3,7 @@ import pandas as pd
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
 from statsmodels.formula.api import mixedlm
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
 from statsmodels.stats.multitest import multipletests
 import streamlit as st
 from tabulate import tabulate
@@ -39,23 +40,12 @@ def analyze_mixed_effects(data, groups):
     model = mixedlm("value ~ group", data=anova_df, groups=anova_df["biorep"])
     result = model.fit()
 
-    # Extract pairwise comparisons
-    comparisons = []
-    p_values = []
-    groups_combinations = [(g1, g2) for i, g1 in enumerate(groups) for g2 in groups[i+1:]]
-    for g1, g2 in groups_combinations:
-        subset = anova_df[anova_df['group'].isin([g1, g2])]
-        submodel = mixedlm("value ~ group", data=subset, groups=subset["biorep"]).fit()
-        contrast = submodel.t_test_pairwise('group')
-        p_values.append(contrast.result_frame['P>|t|'][1])
-        comparisons.append((g1, g2))
+    # Extract pairwise comparisons using Tukey HSD
+    tukey = pairwise_tukeyhsd(endog=anova_df['value'], groups=anova_df['group'], alpha=0.05)
 
-    # Adjust p-values for multiple comparisons using Holm-Bonferroni method
-    reject, pvals_corrected, _, _ = multipletests(p_values, method='holm')
+    return anova_df, result.summary(), tukey
 
-    return anova_df, result.summary(), comparisons, reject
-
-def plot_results(groups, anova_df, comparisons, reject):
+def plot_results(groups, anova_df, tukey):
     means = anova_df.groupby('group')['value'].mean()
     std_devs = anova_df.groupby('group')['value'].std()
 
@@ -70,17 +60,18 @@ def plot_results(groups, anova_df, comparisons, reject):
     ax.set_title('Comparison of Group Means (Mixed Effects)', fontsize=15)
     ax.set_ylabel('Mean Values', fontsize=12)
 
-    if np.any(reject):
+    if np.any(tukey.reject):
         max_val = max(means) + max(std_devs)
         h = max_val * 0.05
         gap = max_val * 0.02
         whisker_gap = max_val * 0.02
 
-        for (g1, g2), sig in zip(comparisons, reject):
-            if sig:
-                group1 = groups.index(g1)
-                group2 = groups.index(g2)
-                add_significance(ax, group1, group2, max_val + whisker_gap, h, '*')
+        for i, reject in enumerate(tukey.reject):
+            if reject:
+                group1, group2 = tukey.groupsunique[tukey._pairs[i]]
+                group1_idx = groups.index(group1)
+                group2_idx = groups.index(group2)
+                add_significance(ax, group1_idx, group2_idx, max_val + whisker_gap, h, '*')
                 whisker_gap += h + gap
 
     ax.set_facecolor('white')
@@ -96,13 +87,10 @@ def plot_results(groups, anova_df, comparisons, reject):
 
     return plot_url
 
-def display_table(summary, comparisons, reject):
+def display_table(summary, tukey):
     summary_html = summary.as_html()
-    comparisons_html = "<h4>Pairwise Comparisons (Holm-Bonferroni adjusted):</h4><table><tr><th>Group 1</th><th>Group 2</th><th>Significant</th></tr>"
-    for (g1, g2), sig in zip(comparisons, reject):
-        comparisons_html += f"<tr><td>{g1}</td><td>{g2}</td><td>{'Yes' if sig else 'No'}</td></tr>"
-    comparisons_html += "</table>"
-    return summary_html, comparisons_html
+    tukey_summary_html = tukey.summary().as_html()
+    return summary_html, tukey_summary_html
 
 def parse_pasted_data(pasted_data, delimiter):
     # Split the data into lines
@@ -141,14 +129,14 @@ if (input_method == 'File Upload' and uploaded_file is not None) or (input_metho
 
         if st.button('Run Analysis and Plot'):
             groups = eval(groups_input)
-            anova_df, summary, comparisons, reject = analyze_mixed_effects(data_values, groups)
+            anova_df, summary, tukey = analyze_mixed_effects(data_values, groups)
 
             st.write("Analysis Type: Mixed Effects Model")
-            summary_html, comparisons_html = display_table(summary, comparisons, reject)
-            plot_url = plot_results(groups, anova_df, comparisons, reject)
+            summary_html, tukey_summary_html = display_table(summary, tukey)
+            plot_url = plot_results(groups, anova_df, tukey)
 
             st.markdown(summary_html, unsafe_allow_html=True)
-            st.markdown(comparisons_html, unsafe_allow_html=True)
+            st.markdown(tukey_summary_html, unsafe_allow_html=True)
             st.image(f"data:image/png;base64,{plot_url}")
     except Exception as e:
         st.error(f"Error processing the file: {e}")
