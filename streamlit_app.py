@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
-from statsmodels.formula.api import mixedlm
+from statsmodels.formula.api import ols
 import streamlit as st
 from tabulate import tabulate
 import io
@@ -10,23 +10,37 @@ import base64
 from io import StringIO
 import scikit_posthocs as sp
 
-def analyze_mixed_model_anova(data, groups):
-    num_technical_reps = data.shape[1] // len(groups)
-    biological_replicates = np.repeat(range(1, num_technical_reps + 1), len(groups))
-    technical_replicates = np.tile(range(1, len(groups) + 1), num_technical_reps)
+def analyze_standard_anova(data, groups):
+    df = pd.DataFrame(data.T, columns=groups * 3)
 
-    df = pd.DataFrame(data.T.flatten(), columns=['value'])
-    df['group'] = np.tile(groups, num_technical_reps)
-    df['biological_replicate'] = biological_replicates
-    df['technical_replicate'] = technical_replicates
+    normalized_values = []
+    for i in range(0, len(groups) * 3, 3):
+        avg_first_row = df.iloc[:, i].mean()
+        for j in range(3):
+            normalized_values.append(df.iloc[:, i + j] / avg_first_row)
 
-    model = mixedlm("value ~ group", df, groups=df["biological_replicate"])
-    result = model.fit()
+    all_normalized_values = []
+    group_labels = []
+    for i in range(len(groups)):
+        for j in range(i, len(normalized_values), 3):
+            valid_values = normalized_values[j].dropna()
+            all_normalized_values.extend(valid_values)
+            group_labels.extend([groups[i]] * len(valid_values))
 
-    means = df.groupby('group')['value'].mean().tolist()
-    std_devs = df.groupby('group')['value'].std().tolist()
+    anova_df = pd.DataFrame({'value': all_normalized_values, 'group': group_labels})
 
-    return df, result.summary(), means, std_devs, "Mixed Model ANOVA"
+    model = ols('value ~ C(group)', data=anova_df).fit()
+    anova_table = sm.stats.anova_lm(model, typ=2)
+
+    means = []
+    std_devs = []
+
+    for group in groups:
+        group_values = anova_df[anova_df['group'] == group]['value']
+        means.append(np.mean(group_values))
+        std_devs.append(np.std(group_values))
+
+    return anova_df, anova_table, means, std_devs, "Standard ANOVA"
 
 def dunnett_test(anova_df, control_group):
     comp = sp.posthoc_dunn(anova_df, val_col='value', group_col='group', p_adjust='bonferroni')
@@ -76,7 +90,7 @@ def plot_results(groups, anova_df, dunnett_results, means, std_devs, analysis_ty
     return plot_url
 
 def display_table(anova_table, dunnett_results):
-    anova_table_html = anova_table.as_html()
+    anova_table_html = anova_table.to_html(classes='table table-striped')
     dunnett_html = dunnett_results.to_frame().to_html(classes='table table-striped')
     return anova_table_html, dunnett_html
 
@@ -122,7 +136,7 @@ if (input_method == 'File Upload' and uploaded_file is not None) or (input_metho
         if st.button('Run Analysis and Plot'):
             groups = eval(groups_input)
 
-            anova_df, anova_table, means, std_devs, analysis_type = analyze_mixed_model_anova(data_values, groups)
+            anova_df, anova_table, means, std_devs, analysis_type = analyze_standard_anova(data_values, groups)
             dunnett_results = dunnett_test(anova_df, groups[0])
 
             st.write(f"Analysis Type: {analysis_type}")
