@@ -92,24 +92,28 @@ def display_table(anova_table, tukey):
 
 st.title('ANOVA Analysis')
 
+delimiter = st.selectbox('Select delimiter', (';', '\t'))
 uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
 if uploaded_file is not None:
-    data = pd.read_csv(uploaded_file)
-    st.write("Data Preview:", data.head())
+    try:
+        data = pd.read_csv(uploaded_file, delimiter=delimiter)
+        st.write("Data Preview:", data.head())
 
-    data_values = data.values
-    st.text_area('Data (numpy array format):', data_values)
+        data_values = data.values
+        st.text_area('Data (numpy array format):', str(data_values))
 
-    groups_input = st.text_area('Groups (list format):', "['siRNA_ctrl', 'siRNA1_VTN', 'siRNA2_VTN']")
+        groups_input = st.text_area('Groups (list format):', "['siRNA_ctrl', 'siRNA1_VTN', 'siRNA2_VTN']")
 
-    if st.button('Run Analysis and Plot'):
-        groups = eval(groups_input)
+        if st.button('Run Analysis and Plot'):
+            groups = eval(groups_input)
 
-        anova_df, anova_table, tukey, significant_pairs, means, std_devs = analyze_data(data_values, groups)
-        anova_table_html, tukey_summary_html = display_table(anova_table, tukey)
-        plot_url = plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs)
+            anova_df, anova_table, tukey, significant_pairs, means, std_devs = analyze_data(data_values, groups)
+            anova_table_html, tukey_summary_html = display_table(anova_table, tukey)
+            plot_url = plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs)
 
-        st.markdown(anova_table_html, unsafe_allow_html=True)
-        st.markdown(tukey_summary_html, unsafe_allow_html=True)
-        st.image(f"data:image/png;base64,{plot_url}")
+            st.markdown(anova_table_html, unsafe_allow_html=True)
+            st.markdown(tukey_summary_html, unsafe_allow_html=True)
+            st.image(f"data:image/png;base64,{plot_url}")
+    except Exception as e:
+        st.error(f"Error processing the file: {e}")
