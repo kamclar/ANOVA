@@ -8,6 +8,7 @@ import streamlit as st
 from tabulate import tabulate
 import io
 import base64
+from io import StringIO
 
 def analyze_standard_anova(data, groups):
     df = pd.DataFrame(data.T, columns=groups * 3)
@@ -134,12 +135,22 @@ def display_table(anova_table, tukey):
 
 st.title('ANOVA Analysis')
 
-delimiter = st.selectbox('Select delimiter', (';', '\t'))
-uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+delimiter = st.selectbox('Select delimiter', (';', '\t', ','))
 
-if uploaded_file is not None:
+input_method = st.radio("Select input method", ('File Upload', 'Copy-Paste'))
+
+if input_method == 'File Upload':
+    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+else:
+    pasted_data = st.text_area("Paste your data here (use selected delimiter)")
+
+if (input_method == 'File Upload' and uploaded_file is not None) or (input_method == 'Copy-Paste' and pasted_data):
     try:
-        data = pd.read_csv(uploaded_file, delimiter=delimiter, header=None)
+        if input_method == 'File Upload':
+            data = pd.read_csv(uploaded_file, delimiter=delimiter, header=None)
+        else:
+            data = pd.read_csv(StringIO(pasted_data), delimiter=delimiter, header=None)
+
         st.write("Data Preview:", data.head())
 
         data_values = data.values
@@ -158,7 +169,7 @@ if uploaded_file is not None:
             else:
                 anova_df, anova_table, tukey, significant_pairs, means, std_devs, analysis_type = analyze_standard_anova(data_values, groups)
 
-            st.markdown(f"Analysis Type: {analysis_type}")
+            st.write(f"Analysis Type: {analysis_type}")
 
             anova_table_html, tukey_summary_html = display_table(anova_table, tukey)
             plot_url = plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs, analysis_type)
