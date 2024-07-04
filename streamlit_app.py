@@ -92,17 +92,24 @@ def display_table(anova_table, tukey):
 
 st.title('ANOVA Analysis')
 
-data_input = st.text_area('Data (numpy array format):', '[[998656.0, 1084988.0, 916308.0, 722976.0, 962084.0], [604008.0, 777348.0, 791404.0, 552608.0, 685984.0], [736832.0, 818552.0, 1055040.0, 1287956.0, 1172576.0], [1662848.0, 1834048.0, 1833852.0, 1693920.0, 1436480.0], [1251460.0, 1413120.0, 1318736.0, 1323892.0, 1276216.0], [1443384.0, 1572480.0, 1397224.0, 1482584.0, 1345784.0], [1274324.0, 1269692.0, 1312584.0, 1287352.0, 1366100.0], [1089768.0, 996400.0, 1111588.0, 1031416.0, 1071800.0], [1207848.0, 1123748.0, 1296440.0, 1266744.0, 1212152.0]]')
-groups_input = st.text_area('Groups (list format):', "['siRNA_ctrl', 'siRNA1_VTN', 'siRNA2_VTN']")
+uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
-if st.button('Run Analysis and Plot'):
-    data = np.array(eval(data_input))
-    groups = eval(groups_input)
+if uploaded_file is not None:
+    data = pd.read_csv(uploaded_file)
+    st.write("Data Preview:", data.head())
 
-    anova_df, anova_table, tukey, significant_pairs, means, std_devs = analyze_data(data, groups)
-    anova_table_html, tukey_summary_html = display_table(anova_table, tukey)
-    plot_url = plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs)
+    data_values = data.values
+    st.text_area('Data (numpy array format):', data_values)
 
-    st.markdown(anova_table_html, unsafe_allow_html=True)
-    st.markdown(tukey_summary_html, unsafe_allow_html=True)
-    st.image(f"data:image/png;base64,{plot_url}")
+    groups_input = st.text_area('Groups (list format):', "['siRNA_ctrl', 'siRNA1_VTN', 'siRNA2_VTN']")
+
+    if st.button('Run Analysis and Plot'):
+        groups = eval(groups_input)
+
+        anova_df, anova_table, tukey, significant_pairs, means, std_devs = analyze_data(data_values, groups)
+        anova_table_html, tukey_summary_html = display_table(anova_table, tukey)
+        plot_url = plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs)
+
+        st.markdown(anova_table_html, unsafe_allow_html=True)
+        st.markdown(tukey_summary_html, unsafe_allow_html=True)
+        st.image(f"data:image/png;base64,{plot_url}")
