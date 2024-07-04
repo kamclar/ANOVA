@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
-from statsmodels.formula.api import ols, mixedlm
+from statsmodels.formula.api import mixedlm
 import streamlit as st
 from tabulate import tabulate
 import io
@@ -10,7 +10,7 @@ import base64
 from io import StringIO
 
 def analyze_mixed_effects(data, groups):
-    biological_replicates = len(groups)
+    biological_replicates = 3
     technical_replicates = data.shape[1] // biological_replicates
 
     df = pd.DataFrame(data.T, columns=groups * biological_replicates)
@@ -44,9 +44,9 @@ def analyze_mixed_effects(data, groups):
         means.append(np.mean(group_values))
         std_devs.append(np.std(group_values))
 
-    return anova_df, result.summary(), means, std_devs, "Mixed-Effects Model"
+    return anova_df, result, means, std_devs, "Mixed-Effects Model"
 
-def plot_results(groups, anova_df, mixed_model_results, means, std_devs, analysis_type):
+def plot_results(groups, anova_df, means, std_devs, analysis_type):
     def add_significance(ax, x1, x2, y, h, text):
         ax.plot([x1, x1, x2, x2], [y, y + h, y + h, y], lw=1.5, color='black')
         ax.text((x1 + x2) * .5, y + h, text, ha='center', va='bottom', color='black', fontsize=12)
@@ -71,9 +71,9 @@ def plot_results(groups, anova_df, mixed_model_results, means, std_devs, analysi
 
     return plot_url
 
-def display_table(mixed_model_summary):
-    mixed_model_html = mixed_model_summary.tables[1].as_html()
-    return mixed_model_html
+def display_table(mixed_model_result):
+    summary_html = mixed_model_result.summary().tables[1].as_html()
+    return summary_html
 
 def parse_pasted_data(pasted_data, delimiter):
     # Split the data into lines
@@ -117,12 +117,12 @@ if (input_method == 'File Upload' and uploaded_file is not None) or (input_metho
         if st.button('Run Analysis and Plot'):
             groups = eval(groups_input)
 
-            anova_df, mixed_model_summary, means, std_devs, analysis_type = analyze_mixed_effects(data_values, groups)
+            anova_df, mixed_model_result, means, std_devs, analysis_type = analyze_mixed_effects(data_values, groups)
 
             st.write(f"Analysis Type: {analysis_type}")
 
-            mixed_model_html = display_table(mixed_model_summary)
-            plot_url = plot_results(groups, anova_df, mixed_model_summary, means, std_devs, analysis_type)
+            mixed_model_html = display_table(mixed_model_result)
+            plot_url = plot_results(groups, anova_df, means, std_devs, analysis_type)
 
             st.markdown(mixed_model_html, unsafe_allow_html=True)
             st.image(f"data:image/png;base64,{plot_url}")
