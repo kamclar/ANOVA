@@ -110,9 +110,9 @@ def parse_pasted_data(pasted_data, delimiter):
 
 st.title('ANOVA Analysis')
 
-delimiter = st.selectbox('Select delimiter', (';', '\t', ','))
+delimiter = st.selectbox('Select delimiter', ('\t', ';', ','))
 
-input_method = st.radio("Select input method", ('File Upload', 'Copy-Paste'))
+input_method = st.radio("Select input method", ('Copy-Paste', 'File Upload', ))
 
 if input_method == 'File Upload':
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
