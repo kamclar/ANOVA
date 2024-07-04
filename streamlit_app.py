@@ -137,13 +137,14 @@ def parse_pasted_data(pasted_data, delimiter):
     # Split the data into lines
     lines = pasted_data.strip().split("\n")
     # Split each line into columns
-    data = [line.split(delimiter) for line in lines]
+    data = [line.split("/t") for line in lines]
     # Find the maximum number of columns
     max_cols = max(len(row) for row in data)
     # Pad the rows to have the same number of columns
     padded_data = [row + [''] * (max_cols - len(row)) for row in data]
     # Convert to DataFrame
     df = pd.DataFrame(padded_data).replace('', np.nan)
+    df = df.apply(pd.to_numeric, errors='coerce')
     return df
 
 st.title('ANOVA Analysis')
