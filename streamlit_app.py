@@ -97,7 +97,7 @@ uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
 if uploaded_file is not None:
     try:
-        data = pd.read_csv(uploaded_file, delimiter=delimiter)
+        data = pd.read_csv(uploaded_file, delimiter=delimiter, header=None)
         st.write("Data Preview:", data.head())
 
         data_values = data.values
