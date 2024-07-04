@@ -2,14 +2,14 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
-from statsmodels.formula.api import ols
+from statsmodels.formula.api import ols, wls
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 import streamlit as st
 from tabulate import tabulate
 import io
 import base64
 
-def analyze_data(data, groups):
+def analyze_standard_anova(data, groups):
     df = pd.DataFrame(data.T, columns=groups * 3)
 
     normalized_values = []
@@ -42,9 +42,51 @@ def analyze_data(data, groups):
         means.append(np.mean(group_values))
         std_devs.append(np.std(group_values))
 
-    return anova_df, anova_table, tukey, significant_pairs, means, std_devs
+    return anova_df, anova_table, tukey, significant_pairs, means, std_devs, "Standard ANOVA"
 
-def plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs):
+def analyze_weighted_anova(data, groups):
+    df = pd.DataFrame(data.T, columns=groups * 3)
+
+    normalized_values = []
+    for i in range(0, len(groups) * 3, 3):
+        avg_first_row = df.iloc[:, i].mean()
+        for j in range(3):
+            normalized_values.append(df.iloc[:, i + j] / avg_first_row)
+
+    all_normalized_values = []
+    group_labels = []
+    weights = []
+    for i in range(len(groups)):
+        for j in range(i, len(normalized_values), 3):
+            valid_values = normalized_values[j].dropna()
+            row_length = len(valid_values)
+            weight = 1 / row_length
+            all_normalized_values.extend(valid_values)
+            group_labels.extend([groups[i]] * row_length)
+            weights.extend([weight] * row_length)
+
+    total_observations = len(all_normalized_values)
+    weights = [w * total_observations / sum(weights) for w in weights]
+
+    anova_df = pd.DataFrame({'value': all_normalized_values, 'group': group_labels, 'weights': weights})
+
+    model = wls('value ~ C(group)', data=anova_df, weights=anova_df['weights']).fit()
+    anova_table = sm.stats.anova_lm(model, typ=2)
+
+    tukey = pairwise_tukeyhsd(endog=anova_df['value'], groups=anova_df['group'], alpha=0.05)
+    significant_pairs = tukey.reject
+
+    means = []
+    std_devs = []
+
+    for group in groups:
+        group_values = anova_df[anova_df['group'] == group]['value']
+        means.append(np.mean(group_values))
+        std_devs.append(np.std(group_values))
+
+    return anova_df, anova_table, tukey, significant_pairs, means, std_devs, "Weighted ANOVA"
+
+def plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs, analysis_type):
     def add_significance(ax, x1, x2, y, h, text):
         ax.plot([x1, x1, x2, x2], [y, y + h, y + h, y], lw=1.5, color='black')
         ax.text((x1 + x2) * .5, y + h, text, ha='center', va='bottom', color='black', fontsize=12)
@@ -53,7 +95,7 @@ def plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs):
     fig, ax = plt.subplots(figsize=(8, 8))
     bars = ax.bar(groups, means, yerr=std_devs, capsize=10, color='#88c7dc')
 
-    ax.set_title('Comparison of Group Means', fontsize=15)
+    ax.set_title(f'Comparison of Group Means ({analysis_type})', fontsize=15)
     ax.set_ylabel('Mean Values', fontsize=12)
 
     if np.any(significant_pairs):
@@ -108,9 +150,16 @@ if uploaded_file is not None:
         if st.button('Run Analysis and Plot'):
             groups = eval(groups_input)
 
-            anova_df, anova_table, tukey, significant_pairs, means, std_devs = analyze_data(data_values, groups)
+            # Detect if the number of columns is not the same across rows
+            unique_lengths = data.applymap(lambda x: len(str(x).split(delimiter))).nunique()
+
+            if unique_lengths.max() == 1:
+                anova_df, anova_table, tukey, significant_pairs, means, std_devs, analysis_type = analyze_standard_anova(data_values, groups)
+            else:
+                anova_df, anova_table, tukey, significant_pairs, means, std_devs, analysis_type = analyze_weighted_anova(data_values, groups)
+
             anova_table_html, tukey_summary_html = display_table(anova_table, tukey)
-            plot_url = plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs)
+            plot_url = plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs, analysis_type)
 
             st.markdown(anova_table_html, unsafe_allow_html=True)
             st.markdown(tukey_summary_html, unsafe_allow_html=True)
