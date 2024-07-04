@@ -15,7 +15,7 @@ def analyze_mixed_model_anova(data, groups):
     biological_replicates = np.repeat(range(1, num_technical_reps + 1), len(groups))
     technical_replicates = np.tile(range(1, len(groups) + 1), num_technical_reps)
 
-    df = pd.DataFrame(data.T, columns=['value'])
+    df = pd.DataFrame(data.T.flatten(), columns=['value'])
     df['group'] = np.tile(groups, num_technical_reps)
     df['biological_replicate'] = biological_replicates
     df['technical_replicate'] = technical_replicates
@@ -76,7 +76,7 @@ def plot_results(groups, anova_df, dunnett_results, means, std_devs, analysis_ty
     return plot_url
 
 def display_table(anova_table, dunnett_results):
-    anova_table_html = anova_table.to_html(classes='table table-striped')
+    anova_table_html = anova_table.as_html()
     dunnett_html = dunnett_results.to_frame().to_html(classes='table table-striped')
     return anova_table_html, dunnett_html
 
