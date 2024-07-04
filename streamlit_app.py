@@ -2,35 +2,39 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
-from statsmodels.formula.api import ols
+from statsmodels.formula.api import ols, mixedlm
 import streamlit as st
 from tabulate import tabulate
 import io
 import base64
 from io import StringIO
-import scikit_posthocs as sp
 
-def analyze_standard_anova(data, groups):
-    df = pd.DataFrame(data.T, columns=groups * 3)
+def analyze_mixed_effects(data, groups):
+    biological_replicates = len(groups)
+    technical_replicates = data.shape[1] // biological_replicates
+
+    df = pd.DataFrame(data.T, columns=groups * biological_replicates)
 
     normalized_values = []
-    for i in range(0, len(groups) * 3, 3):
+    for i in range(0, len(groups) * biological_replicates, biological_replicates):
         avg_first_row = df.iloc[:, i].mean()
-        for j in range(3):
+        for j in range(biological_replicates):
             normalized_values.append(df.iloc[:, i + j] / avg_first_row)
 
     all_normalized_values = []
     group_labels = []
+    subject_labels = []
     for i in range(len(groups)):
-        for j in range(i, len(normalized_values), 3):
+        for j in range(i, len(normalized_values), biological_replicates):
             valid_values = normalized_values[j].dropna()
             all_normalized_values.extend(valid_values)
             group_labels.extend([groups[i]] * len(valid_values))
+            subject_labels.extend([f'subject_{j // biological_replicates}'] * len(valid_values))
 
-    anova_df = pd.DataFrame({'value': all_normalized_values, 'group': group_labels})
+    anova_df = pd.DataFrame({'value': all_normalized_values, 'group': group_labels, 'subject': subject_labels})
 
-    model = ols('value ~ C(group)', data=anova_df).fit()
-    anova_table = sm.stats.anova_lm(model, typ=2)
+    model = mixedlm('value ~ C(group)', anova_df, groups=anova_df['subject'])
+    result = model.fit()
 
     means = []
     std_devs = []
@@ -40,14 +44,9 @@ def analyze_standard_anova(data, groups):
         means.append(np.mean(group_values))
         std_devs.append(np.std(group_values))
 
-    return anova_df, anova_table, means, std_devs, "Standard ANOVA"
+    return anova_df, result.summary(), means, std_devs, "Mixed-Effects Model"
 
-def dunnett_test(anova_df, control_group):
-    comp = sp.posthoc_dunn(anova_df, val_col='value', group_col='group', p_adjust='bonferroni')
-    control_comp = comp.loc[control_group]
-    return control_comp
-
-def plot_results(groups, anova_df, dunnett_results, means, std_devs, analysis_type):
+def plot_results(groups, anova_df, mixed_model_results, means, std_devs, analysis_type):
     def add_significance(ax, x1, x2, y, h, text):
         ax.plot([x1, x1, x2, x2], [y, y + h, y + h, y], lw=1.5, color='black')
         ax.text((x1 + x2) * .5, y + h, text, ha='center', va='bottom', color='black', fontsize=12)
@@ -58,23 +57,6 @@ def plot_results(groups, anova_df, dunnett_results, means, std_devs, analysis_ty
 
     ax.set_title(f'Comparison of Group Means ({analysis_type})', fontsize=15)
     ax.set_ylabel('Mean Values', fontsize=12)
-
-    control_group = groups[0]
-    other_groups = groups[1:]
-
-    if not dunnett_results.empty:
-        max_val = max(means) + max(std_devs)
-        h = max_val * 0.05
-        gap = max_val * 0.02
-        whisker_gap = max_val * 0.02
-
-        for group in other_groups:
-            p_value = dunnett_results[group]
-            if p_value < 0.05:  # If p-value is significant
-                group1 = groups.index(control_group)
-                group2 = groups.index(group)
-                add_significance(ax, group1, group2, max_val + whisker_gap, h, '*')
-                whisker_gap += h + gap
 
     ax.set_facecolor('white')
     fig.patch.set_facecolor('white')
@@ -89,10 +71,9 @@ def plot_results(groups, anova_df, dunnett_results, means, std_devs, analysis_ty
 
     return plot_url
 
-def display_table(anova_table, dunnett_results):
-    anova_table_html = anova_table.to_html(classes='table table-striped')
-    dunnett_html = dunnett_results.to_frame().to_html(classes='table table-striped')
-    return anova_table_html, dunnett_html
+def display_table(mixed_model_summary):
+    mixed_model_html = mixed_model_summary.tables[1].as_html()
+    return mixed_model_html
 
 def parse_pasted_data(pasted_data, delimiter):
     # Split the data into lines
@@ -108,7 +89,7 @@ def parse_pasted_data(pasted_data, delimiter):
     df = df.apply(pd.to_numeric, errors='coerce')
     return df
 
-st.title('ANOVA Analysis')
+st.title('ANOVA Analysis with Mixed-Effects Model')
 
 delimiter = st.selectbox('Select delimiter', (';', '\t', ','))
 
@@ -136,16 +117,14 @@ if (input_method == 'File Upload' and uploaded_file is not None) or (input_metho
         if st.button('Run Analysis and Plot'):
             groups = eval(groups_input)
 
-            anova_df, anova_table, means, std_devs, analysis_type = analyze_standard_anova(data_values, groups)
-            dunnett_results = dunnett_test(anova_df, groups[0])
+            anova_df, mixed_model_summary, means, std_devs, analysis_type = analyze_mixed_effects(data_values, groups)
 
             st.write(f"Analysis Type: {analysis_type}")
 
-            anova_table_html, dunnett_html = display_table(anova_table, dunnett_results)
-            plot_url = plot_results(groups, anova_df, dunnett_results, means, std_devs, analysis_type)
+            mixed_model_html = display_table(mixed_model_summary)
+            plot_url = plot_results(groups, anova_df, mixed_model_summary, means, std_devs, analysis_type)
 
-            st.markdown(anova_table_html, unsafe_allow_html=True)
-            st.markdown(dunnett_html, unsafe_allow_html=True)
+            st.markdown(mixed_model_html, unsafe_allow_html=True)
             st.image(f"data:image/png;base64,{plot_url}")
     except Exception as e:
         st.error(f"Error processing the file: {e}")
