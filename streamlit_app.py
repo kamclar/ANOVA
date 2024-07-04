@@ -73,7 +73,7 @@ def plot_results(groups, anova_df, means, std_devs, analysis_type):
 
 def display_table(mixed_model_result):
     summary = mixed_model_result.summary()
-    summary_df = pd.read_html(summary.tables[1].as_html(), header=0, index_col=0)[0]
+    summary_df = pd.read_html(summary.tables[1].to_html(), header=0, index_col=0)[0]
     summary_html = summary_df.to_html()
     return summary_html
 
