@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
-from statsmodels.formula.api import ols
+from statsmodels.formula.api import ols, wls
 import streamlit as st
 from tabulate import tabulate
 import io
@@ -10,7 +10,7 @@ import base64
 from io import StringIO
 import scikit_posthocs as sp
 
-def analyze_standard_anova(data, groups):
+def analyze_weighted_anova(data, groups):
     df = pd.DataFrame(data.T, columns=groups * 3)
 
     normalized_values = []
@@ -21,15 +21,22 @@ def analyze_standard_anova(data, groups):
 
     all_normalized_values = []
     group_labels = []
+    weights = []
     for i in range(len(groups)):
         for j in range(i, len(normalized_values), 3):
             valid_values = normalized_values[j].dropna()
+            row_length = len(valid_values)
+            weight = 1 / row_length
             all_normalized_values.extend(valid_values)
-            group_labels.extend([groups[i]] * len(valid_values))
+            group_labels.extend([groups[i]] * row_length)
+            weights.extend([weight] * row_length)
 
-    anova_df = pd.DataFrame({'value': all_normalized_values, 'group': group_labels})
+    total_observations = len(all_normalized_values)
+    weights = [w * total_observations / sum(weights) for w in weights]
 
-    model = ols('value ~ C(group)', data=anova_df).fit()
+    anova_df = pd.DataFrame({'value': all_normalized_values, 'group': group_labels, 'weights': weights})
+
+    model = wls('value ~ C(group)', data=anova_df, weights=anova_df['weights']).fit()
     anova_table = sm.stats.anova_lm(model, typ=2)
 
     means = []
@@ -40,7 +47,26 @@ def analyze_standard_anova(data, groups):
         means.append(np.mean(group_values))
         std_devs.append(np.std(group_values))
 
-    return anova_df, anova_table, means, std_devs, "Standard ANOVA"
+    return anova_df, anova_table, means, std_devs, "Weighted ANOVA"
+
+def analyze_standard_anova(data, groups):
+    df = pd.DataFrame(data.T, columns=groups * 3)
+
+    melted_df = pd.melt(df.reset_index(), id_vars=['index'], value_vars=groups * 3)
+    melted_df.columns = ['index', 'group', 'value']
+
+    model = ols('value ~ C(group)', data=melted_df).fit()
+    anova_table = sm.stats.anova_lm(model, typ=2)
+
+    means = []
+    std_devs = []
+
+    for group in groups:
+        group_values = melted_df[melted_df['group'] == group]['value']
+        means.append(np.mean(group_values))
+        std_devs.append(np.std(group_values))
+
+    return melted_df, anova_table, means, std_devs, "Standard ANOVA"
 
 def dunnett_test(anova_df, control_group):
     comp = sp.posthoc_dunn(anova_df, val_col='value', group_col='group', p_adjust='bonferroni')
@@ -48,44 +74,21 @@ def dunnett_test(anova_df, control_group):
     return control_comp
 
 def plot_results(groups, anova_df, dunnett_results, means, std_devs, analysis_type):
-    def add_significance(ax, x1, x2, y, h, text):
-        ax.plot([x1, x1, x2, x2], [y, y + h, y + h, y], lw=1.5, color='black')
-        ax.text((x1 + x2) * .5, y + h, text, ha='center', va='bottom', color='black', fontsize=12)
+    fig, ax = plt.subplots()
 
-    # Bar plot
-    fig, ax = plt.subplots(figsize=(8, 8))
-    bars = ax.bar(groups, means, yerr=std_devs, capsize=10, color='#88c7dc')
-
-    ax.set_title(f'Comparison of Group Means ({analysis_type})', fontsize=15)
-    ax.set_ylabel('Mean Values', fontsize=12)
-
-    control_group = groups[0]
-    other_groups = groups[1:]
-
-    if not dunnett_results.empty:
-        max_val = max(means) + max(std_devs)
-        h = max_val * 0.05
-        gap = max_val * 0.02
-        whisker_gap = max_val * 0.02
-
-        for group in other_groups:
-            p_value = dunnett_results[group]
-            if p_value < 0.05:  # If p-value is significant
-                group1 = groups.index(control_group)
-                group2 = groups.index(group)
-                add_significance(ax, group1, group2, max_val + whisker_gap, h, '*')
-                whisker_gap += h + gap
-
-    ax.set_facecolor('white')
-    fig.patch.set_facecolor('white')
-    ax.grid(False)
+    x = np.arange(len(groups))
+    ax.bar(x, means, yerr=std_devs, align='center', alpha=0.5, ecolor='black', capsize=10)
+    ax.set_ylabel('Values')
+    ax.set_xticks(x)
+    ax.set_xticklabels(groups)
+    ax.set_title(f'{analysis_type} Results')
 
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
-    buf.seek(0)
-    plot_url = base64.b64encode(buf.getvalue()).decode()
-
     plt.close(fig)
+    buf.seek(0)
+    plot_url = base64.b64encode(buf.read()).decode('utf-8')
+    buf.close()
 
     return plot_url
 
@@ -136,7 +139,12 @@ if (input_method == 'File Upload' and uploaded_file is not None) or (input_metho
         if st.button('Run Analysis and Plot'):
             groups = eval(groups_input)
 
-            anova_df, anova_table, means, std_devs, analysis_type = analyze_standard_anova(data_values, groups)
+            # Determine which ANOVA to use
+            if data.isnull().values.any():
+                anova_df, anova_table, means, std_devs, analysis_type = analyze_weighted_anova(data_values, groups)
+            else:
+                anova_df, anova_table, means, std_devs, analysis_type = analyze_standard_anova(data_values, groups)
+
             dunnett_results = dunnett_test(anova_df, groups[0])
 
             st.write(f"Analysis Type: {analysis_type}")
