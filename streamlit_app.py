@@ -8,6 +8,8 @@ from tabulate import tabulate
 import io
 import base64
 from io import StringIO
+from statsmodels.stats.multitest import multipletests
+import statsmodels.stats.api as sms
 
 def analyze_mixed_effects(data, groups):
     # Reshape data into long format for mixed-effects modeling
@@ -38,9 +40,13 @@ def analyze_mixed_effects(data, groups):
     model = mixedlm("value ~ group", data=anova_df, groups=anova_df["biorep"])
     result = model.fit()
 
-    return anova_df, result.summary()
+    # Post-hoc pairwise comparisons using estimated marginal means (emmeans)
+    mc = sms.Multicomp(anova_df["value"], anova_df["group"])
+    res = mc.tukeyhsd(alpha=0.05)
+    
+    return anova_df, result.summary(), res
 
-def plot_results(groups, anova_df, summary):
+def plot_results(groups, anova_df, res):
     means = anova_df.groupby('group')['value'].mean()
     std_devs = anova_df.groupby('group')['value'].std()
 
@@ -55,6 +61,23 @@ def plot_results(groups, anova_df, summary):
     ax.set_title('Comparison of Group Means (Mixed Effects)', fontsize=15)
     ax.set_ylabel('Mean Values', fontsize=12)
 
+    # Adding significance asterisks for Tukey HSD results
+    comparisons = res._results_table.data[1:]  # Extract pairwise comparison data
+    significant_pairs = res.reject
+
+    if np.any(significant_pairs):
+        max_val = max(means) + max(std_devs)
+        h = max_val * 0.05
+        gap = max_val * 0.02
+        whisker_gap = max_val * 0.02
+
+        for i, (pair, sig) in enumerate(zip(comparisons, significant_pairs)):
+            if sig:
+                group1 = groups.index(pair[0])
+                group2 = groups.index(pair[1])
+                add_significance(ax, group1, group2, max_val + whisker_gap, h, '*')
+                whisker_gap += h + gap
+
     ax.set_facecolor('white')
     fig.patch.set_facecolor('white')
     ax.grid(False)
@@ -68,9 +91,10 @@ def plot_results(groups, anova_df, summary):
 
     return plot_url
 
-def display_table(summary):
+def display_table(summary, tukey_summary):
     summary_html = summary.as_html()
-    return summary_html
+    tukey_summary_html = tukey_summary.as_html()
+    return summary_html, tukey_summary_html
 
 def parse_pasted_data(pasted_data, delimiter):
     # Split the data into lines
@@ -109,13 +133,14 @@ if (input_method == 'File Upload' and uploaded_file is not None) or (input_metho
 
         if st.button('Run Analysis and Plot'):
             groups = eval(groups_input)
-            anova_df, summary = analyze_mixed_effects(data_values, groups)
+            anova_df, summary, res = analyze_mixed_effects(data_values, groups)
 
             st.write("Analysis Type: Mixed Effects Model")
-            summary_html = display_table(summary)
-            plot_url = plot_results(groups, anova_df, summary)
+            summary_html, tukey_summary_html = display_table(summary, res)
+            plot_url = plot_results(groups, anova_df, res)
 
             st.markdown(summary_html, unsafe_allow_html=True)
+            st.markdown(tukey_summary_html, unsafe_allow_html=True)
             st.image(f"data:image/png;base64,{plot_url}")
     except Exception as e:
         st.error(f"Error processing the file: {e}")
