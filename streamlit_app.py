@@ -150,13 +150,15 @@ if uploaded_file is not None:
         if st.button('Run Analysis and Plot'):
             groups = eval(groups_input)
 
-            # Detect if the number of columns is not the same across rows
-            unique_lengths = data.applymap(lambda x: len(str(x).split(delimiter))).nunique()
+            # Check if any row contains NaN values indicating varying number of columns
+            contains_nan = data.isna().any(axis=1).any()
 
-            if unique_lengths.max() == 1:
-                anova_df, anova_table, tukey, significant_pairs, means, std_devs, analysis_type = analyze_standard_anova(data_values, groups)
-            else:
+            if contains_nan:
                 anova_df, anova_table, tukey, significant_pairs, means, std_devs, analysis_type = analyze_weighted_anova(data_values, groups)
+            else:
+                anova_df, anova_table, tukey, significant_pairs, means, std_devs, analysis_type = analyze_standard_anova(data_values, groups)
+
+            st.write(f"Analysis Type: {analysis_type}")
 
             anova_table_html, tukey_summary_html = display_table(anova_table, tukey)
             plot_url = plot_results(groups, anova_df, tukey, significant_pairs, means, std_devs, analysis_type)
