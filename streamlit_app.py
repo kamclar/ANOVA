@@ -46,9 +46,9 @@ def analyze_mixed_effects(data, groups):
     for g1, g2 in groups_combinations:
         subset = anova_df[anova_df['group'].isin([g1, g2])]
         submodel = mixedlm("value ~ group", data=subset, groups=subset["biorep"]).fit()
-        comparison = submodel.t_test_pairwise('group').result_frame
+        contrast = submodel.t_test_pairwise('group')
+        p_values.append(contrast.result_frame['P>|t|'][1])
         comparisons.append((g1, g2))
-        p_values.append(comparison['P>|t|'][1])
 
     # Adjust p-values for multiple comparisons using Holm-Bonferroni method
     reject, pvals_corrected, _, _ = multipletests(p_values, method='holm')
